@@ -4,9 +4,9 @@
 
 - Delivery strategy: chained PRs
 - Chain strategy: stacked-to-main
-- Current slice: atomic order creation, approved issue #16
-- Branch/base: `feat/atomic-order-creation` from clean updated `main` after merged PR #15
-- Review budget: 400 authored additions and deletions; generated `package-lock.json` is retained in the snapshot and excluded from reviewer burden.
+- Current slice: lifecycle and cancellation, approved issue #5
+- Branch/base: `fix/order-lifecycle-cancellation` from clean updated `main` after merged PR #17
+- Review budget: 400 authored additions and deletions; final stacked-to-main slice contains 333 authored additions and deletions.
 
 ## Completed Tasks
 
@@ -16,6 +16,8 @@
 - [x] 2.2 Product CRUD validation, explicit response schema, numeric price/stock boundaries, and soft deletion.
 - [x] 3.1 Atomic duplicate aggregation and locked creation.
 - [x] 3.2 Creation rollback, concurrency, snapshots, and immutable lines.
+- [x] 4.1 Locked strict lifecycle transition table with 409 no-mutation rejection.
+- [x] 4.2 Exactly-once sorted-lock cancellation restocking with PostgreSQL concurrency proof.
 
 ## TDD Cycle Evidence
 
@@ -27,6 +29,8 @@
 | 2.2 | `src/products/dto/product-response.dto.spec.ts`, `src/products/products.service.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | `npm test -- --runInBand` → exit 0, 4 suites/9 tests; `npm run test:e2e` → exit 0, PostgreSQL `db` only, 1 suite/6 tests | DTO unit → failed: `Cannot find module './product-response.dto'`; focused PostgreSQL E2E → failed: `ProductResponseDto` schema was undefined; request-schema E2E → failed because `CreateProductDto` properties were undefined; response-stock E2E → expected `integer`, received `number`; empty-name PATCH → expected 400, received 200; invalid-stock proof was added first and passed against existing DTO validation | Focused DTO → exit 0, 1 suite/1 test; focused PostgreSQL E2E → exit 0, 1 suite/1 test (6 skipped); focused products → exit 0, 2 suites/3 tests; request-schema, response-stock, empty-name, and invalid-stock follow-up E2E → exit 0, 1 suite/1 test (6 skipped) | Product E2E proves zero stock, omitted/supplied description, numeric price, invalid create/empty-name/negative-stock update no-write, soft deletion, response/error operations, discoverable request constraints, and integer response stock; service tests prove active CRUD/soft deactivation | Added only explicit response/request DTO metadata and controller Swagger decorators; replaced PATCH max-only validation with length 1..255; invalid-stock proof required no production change; formatted touched files and reran focused tests |
 | 3.1 | `src/orders/orders.service.spec.ts` | Unit | `npm test -- --runInBand` → exit 0, 6 suites/12 tests | Focused service → failed: duplicates produced multiple lines; invalid quantities resolved; missing participants/insufficient stock returned 400 | Focused service → exit 0, 1 suite/7 tests | Duplicate sums, sorted locks, empty/zero/fractional quantities, missing/inactive participants, and aggregate shortage | Normalized before transaction; all focused tests stayed green |
 | 3.2 | `test/app.e2e-spec.ts` | E2E | `npm run test:e2e` → exit 0, PostgreSQL `db`, 1 suite/7 tests | Focused E2E → failed: Swagger order-create 409 response was absent | Focused E2E → exit 0, 1 suite/1 test (7 skipped); full E2E → exit 0, 1 suite/8 tests | Insufficient-stock rollback, concurrent 201/409, non-negative stock, price snapshot, immutable lines | Added only the 409 Swagger category; existing mapper persistence/read behavior passed runtime proof |
+| 4.1 | `src/orders/orders.service.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | Focused service → exit 0, 1 suite/7 tests | Focused service RED → 10 failed/7 passed: update used unlocked repository lookup; E2E lifecycle scenario started RED on missing status-route 409 documentation | Focused service → exit 0, 1 suite/17 tests; focused lifecycle E2E → exit 0, 1 passed/8 skipped | Immediate progression, allowed PENDING/CONFIRMED cancellation, skips, reversals, SHIPPED cancellation, and terminal changes | Extracted transition-table predicate; locked status update and canonical reread stayed green |
+| 4.2 | `src/orders/orders.service.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | Focused service after 4.1 → exit 0, 1 suite/17 tests | Unit RED → expected restored stock 5, received 1; E2E RED → status-route 409 Swagger response undefined | Focused service → exit 0, 1 suite/18 tests; lifecycle E2E → exit 0, 1 passed/8 skipped | Canonical multi-line restock locks product IDs in sorted order; PostgreSQL concurrent requests yield exactly one 200 and one 409 with stock restored once | Extracted sorted `restoreStock`; final unit/E2E/build/quality checks stayed green |
 
 Historical candidate evidence remains preserved for task 1.1 only. Task 1.2 was implemented independently from current main; no lifecycle, aggregation, locking, or restocking candidate hunks were restored.
 
@@ -79,15 +83,31 @@ Historical candidate evidence remains preserved for task 1.1 only. Task 1.2 was 
 | Full unit, build, quality | `npm test -- --runInBand` → exit 0, 7 suites/19 tests; `npm run build`, focused Prettier/ESLint, and `git diff --check` → exit 0. |
 | Rollback boundary | Revert `src/orders/orders.service.ts`, `src/orders/orders.controller.ts`, `src/orders/orders.service.spec.ts`, task-3 E2E assertions, and these task/progress entries; this removes only creation normalization/locking categories and proof. |
 
+### Task 4.1 Work Unit Evidence
+
+| Evidence | Exact result |
+| --- | --- |
+| Focused tests | `npm test -- --runInBand orders/orders.service.spec.ts` → exit 0, 1 suite/18 tests passed; safety-net baseline before edits was 1 suite/7 tests passed. |
+| Runtime harness | `docker compose up -d db && npm run test:e2e -- -t "enforces lifecycle transitions"` → exit 0, 1 passed/8 skipped; PostgreSQL proves 409 skips and SHIPPED cancellation preserve status/stock, then proves immediate delivery transitions. |
+| Rollback boundary | Revert the transition-table and locked-status portions of `src/orders/orders.service.ts`, task-4.1 unit assertions, task-4.1 E2E assertions, and this task/progress entry; order creation and canonical responses remain intact. |
+
+### Task 4.2 Work Unit Evidence
+
+| Evidence | Exact result |
+| --- | --- |
+| Focused tests | `npm test -- --runInBand orders/orders.service.spec.ts` → exit 0, 1 suite/18 tests passed; RED expected restored product stock 5 and received 1. |
+| Runtime harness | `docker compose up -d db && npm run test:e2e -- -t "enforces lifecycle transitions"` → exit 0, 1 passed/8 skipped; two concurrent `CANCELLED` PATCH requests returned sorted `[200, 409]`, and PostgreSQL stock was exactly 7 and 6 after one restoration. Full `npm run test:e2e` → exit 0, 1 suite/9 tests passed. |
+| Full checks and quality | `npm test -- --runInBand` → exit 0, 7 suites/30 tests; `npm run build` → exit 0; focused Prettier and ESLint plus `git diff --check` → exit 0; `docker compose stop db` stopped PostgreSQL. |
+| Rollback boundary | Revert `src/orders/orders.service.ts`, `src/orders/orders.controller.ts`, lifecycle test additions in `src/orders/orders.service.spec.ts` and `test/app.e2e-spec.ts`, plus task-4.2/progress entries; this removes only transitions/cancellation restocking and its HTTP documentation. |
+
 ## Remaining Tasks
 
-- [ ] 4.1 Lifecycle transition table.
-- [ ] 4.2 Exactly-once cancellation restocking and final verification.
+None.
 
 ## Deviations
 
-None — tasks 3.1–3.2 match the normalized, sorted-lock creation design and preserve the existing public response mapping.
+None — tasks 4.1–4.2 match the locked transition and sorted-restock design without changing creation semantics.
 
 ## Status
 
-6/8 tasks complete. Ready for the lifecycle/restocking stacked slice after this slice is independently reviewed and merged.
+8/8 tasks complete. Ready for native SDD verify.

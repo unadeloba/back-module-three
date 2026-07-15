@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp, configureSwagger } from './../src/app.setup';
+import { DataSource } from 'typeorm';
 
 type ProductResponse = {
   id: string;
@@ -473,6 +474,202 @@ describe('AppController (e2e)', () => {
     expect(
       document.paths['/api/orders'].post?.responses?.['409'],
     ).toBeDefined();
+  });
+
+  it('enforces lifecycle transitions and restores concurrent cancellation stock once', async () => {
+    const server = app.getHttpServer();
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const customer = await request(server)
+      .post('/api/customers')
+      .send({
+        fullName: 'Lifecycle Customer',
+        email: `lifecycle-${suffix}@example.com`,
+      })
+      .expect(201);
+    const firstProduct = await request(server)
+      .post('/api/products')
+      .send({ name: `First Lifecycle Product ${suffix}`, price: 10, stock: 10 })
+      .expect(201);
+    const secondProduct = await request(server)
+      .post('/api/products')
+      .send({ name: `Second Lifecycle Product ${suffix}`, price: 5, stock: 8 })
+      .expect(201);
+    const customerId = (customer.body as CustomerResponse).id;
+    const firstProductId = (firstProduct.body as ProductResponse).id;
+    const secondProductId = (secondProduct.body as ProductResponse).id;
+    const orderPayload = {
+      customerId,
+      items: [
+        { productId: secondProductId, quantity: 2 },
+        { productId: firstProductId, quantity: 3 },
+      ],
+    };
+
+    const lifecycleOrder = await request(server)
+      .post('/api/orders')
+      .send(orderPayload)
+      .expect(201);
+    const lifecycleOrderId = (lifecycleOrder.body as OrderResponse).id;
+    await request(server)
+      .patch(`/api/orders/${lifecycleOrderId}/status`)
+      .send({ status: 'SHIPPED' })
+      .expect(409);
+    expect(
+      (
+        (
+          await request(server)
+            .get(`/api/orders/${lifecycleOrderId}`)
+            .expect(200)
+        ).body as OrderResponse
+      ).status,
+    ).toBe('PENDING');
+    expect(
+      (
+        (
+          await request(server)
+            .get(`/api/products/${firstProductId}`)
+            .expect(200)
+        ).body as ProductResponse
+      ).stock,
+    ).toBe(7);
+    await request(server)
+      .patch(`/api/orders/${lifecycleOrderId}/status`)
+      .send({ status: 'CONFIRMED' })
+      .expect(200)
+      .expect(({ body }: { body: OrderResponse }) =>
+        expect(body.status).toBe('CONFIRMED'),
+      );
+    await request(server)
+      .patch(`/api/orders/${lifecycleOrderId}/status`)
+      .send({ status: 'SHIPPED' })
+      .expect(200);
+    await request(server)
+      .patch(`/api/orders/${lifecycleOrderId}/status`)
+      .send({ status: 'CANCELLED' })
+      .expect(409);
+    await request(server)
+      .patch(`/api/orders/${lifecycleOrderId}/status`)
+      .send({ status: 'DELIVERED' })
+      .expect(200);
+
+    const cancellableOrder = await request(server)
+      .post('/api/orders')
+      .send(orderPayload)
+      .expect(201);
+    const cancellableOrderId = (cancellableOrder.body as OrderResponse).id;
+    const cancellations = await Promise.all([
+      request(server)
+        .patch(`/api/orders/${cancellableOrderId}/status`)
+        .send({ status: 'CANCELLED' }),
+      request(server)
+        .patch(`/api/orders/${cancellableOrderId}/status`)
+        .send({ status: 'CANCELLED' }),
+    ]);
+    expect(cancellations.map(({ status }) => status).sort()).toEqual([
+      200, 409,
+    ]);
+    expect(
+      (
+        (
+          await request(server)
+            .get(`/api/products/${firstProductId}`)
+            .expect(200)
+        ).body as ProductResponse
+      ).stock,
+    ).toBe(7);
+    expect(
+      (
+        (
+          await request(server)
+            .get(`/api/products/${secondProductId}`)
+            .expect(200)
+        ).body as ProductResponse
+      ).stock,
+    ).toBe(6);
+
+    const document = (await request(server).get('/api/docs-json').expect(200))
+      .body as SwaggerDocument;
+    const statusPath = document.paths['/api/orders/{id}/status'].patch;
+    expect(statusPath?.responses?.['404']).toBeDefined();
+    expect(statusPath?.responses?.['409']).toBeDefined();
+  });
+
+  it('preserves restored stock during a queued price-only product update', async () => {
+    const server = app.getHttpServer();
+    const dataSource = app.get(DataSource);
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const customer = await request(server)
+      .post('/api/customers')
+      .send({ fullName: 'Race Customer', email: `race-${suffix}@example.com` })
+      .expect(201);
+    const product = await request(server)
+      .post('/api/products')
+      .send({ name: `Race Product ${suffix}`, price: 10, stock: 10 })
+      .expect(201);
+    const productId = (product.body as ProductResponse).id;
+    const order = await request(server)
+      .post('/api/orders')
+      .send({
+        customerId: (customer.body as CustomerResponse).id,
+        items: [{ productId, quantity: 3 }],
+      })
+      .expect(201);
+    const orderId = (order.body as OrderResponse).id;
+    const waitForBlockedQuery = async (queryPattern: string) => {
+      const deadline = Date.now() + 3_000;
+      while (Date.now() < deadline) {
+        const [{ blocked }] = await dataSource.query<
+          Array<{ blocked: boolean }>
+        >(
+          `SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND pid <> pg_backend_pid()
+              AND wait_event_type = 'Lock'
+              AND query LIKE $1
+          ) AS blocked`,
+          [queryPattern],
+        );
+        if (blocked) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`Timed out waiting for blocked query: ${queryPattern}`);
+    };
+    const blocker = dataSource.createQueryRunner();
+    await blocker.connect();
+    await blocker.startTransaction();
+
+    try {
+      await blocker.query('SELECT id FROM products WHERE id = $1 FOR UPDATE', [
+        productId,
+      ]);
+      const cancellation = request(server)
+        .patch(`/api/orders/${orderId}/status`)
+        .send({ status: 'CANCELLED' })
+        .then((response) => response);
+      await waitForBlockedQuery('%FROM "products"%FOR UPDATE%');
+      const priceUpdate = request(server)
+        .patch(`/api/products/${productId}`)
+        .send({ price: 15 })
+        .then((response) => response);
+      await waitForBlockedQuery('UPDATE "products"%');
+      await blocker.commitTransaction();
+
+      const [cancelled, updated] = await Promise.all([
+        cancellation,
+        priceUpdate,
+      ]);
+      expect(cancelled.status).toBe(200);
+      expect(updated.status).toBe(200);
+      const persisted = await request(server)
+        .get(`/api/products/${productId}`)
+        .expect(200);
+      expect((persisted.body as ProductResponse).stock).toBe(10);
+      expect((persisted.body as ProductResponse).price).toBe(15);
+    } finally {
+      if (blocker.isTransactionActive) await blocker.rollbackTransaction();
+      await blocker.release();
+    }
   });
 
   afterEach(async () => {
