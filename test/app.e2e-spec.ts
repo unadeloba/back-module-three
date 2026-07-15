@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp, configureSwagger } from './../src/app.setup';
 
 type ProductResponse = { price: number };
+type CustomerResponse = { id: string; phone: string | null; isActive: boolean };
 type SwaggerDocument = {
   paths: Record<string, unknown>;
   components: {
@@ -14,6 +15,7 @@ type SwaggerDocument = {
       {
         properties: Record<string, { type?: string; enum?: string[] }>;
         enum?: string[];
+        required?: string[];
       }
     >;
   };
@@ -84,6 +86,85 @@ describe('AppController (e2e)', () => {
 
     expect(product.price).toBe(25.5);
     expect(typeof product.price).toBe('number');
+  });
+
+  it('manages active customers, rejects invalid and duplicate writes, and soft deletes', async () => {
+    const server = app.getHttpServer();
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const customer = await request(server)
+      .post('/api/customers')
+      .send({
+        fullName: 'Customer One',
+        email: `customer-one-${suffix}@example.com`,
+      })
+      .expect(201);
+    const customerResponse = customer.body as CustomerResponse;
+
+    expect(customerResponse.phone).toBeNull();
+    expect(customerResponse.isActive).toBe(true);
+
+    await request(server)
+      .post('/api/customers')
+      .send({
+        fullName: 'Customer Duplicate',
+        email: `customer-one-${suffix}@example.com`,
+      })
+      .expect(409);
+
+    const secondCustomer = await request(server)
+      .post('/api/customers')
+      .send({
+        fullName: 'Customer Two',
+        email: `customer-two-${suffix}@example.com`,
+        phone: '555-0102',
+      })
+      .expect(201);
+
+    await request(server)
+      .patch(`/api/customers/${(secondCustomer.body as CustomerResponse).id}`)
+      .send({ email: `customer-one-${suffix}@example.com` })
+      .expect(409);
+
+    const customersBeforeInvalid = await request(server)
+      .get('/api/customers')
+      .expect(200);
+    const countBeforeInvalid = (
+      customersBeforeInvalid.body as CustomerResponse[]
+    ).length;
+    await request(server)
+      .post('/api/customers')
+      .send({ fullName: 'Invalid Customer', email: 'not-an-email' })
+      .expect(400);
+    const customersAfterInvalid = await request(server)
+      .get('/api/customers')
+      .expect(200);
+    expect(customersAfterInvalid.body as CustomerResponse[]).toHaveLength(
+      countBeforeInvalid,
+    );
+
+    await request(server)
+      .delete(`/api/customers/${customerResponse.id}`)
+      .expect(204);
+    await request(server)
+      .get(`/api/customers/${customerResponse.id}`)
+      .expect(404);
+    const activeCustomers = await request(server)
+      .get('/api/customers')
+      .expect(200);
+    expect(
+      (activeCustomers.body as CustomerResponse[]).map(({ id }) => id),
+    ).not.toContain(customerResponse.id);
+
+    const document = (await request(server).get('/api/docs-json').expect(200))
+      .body as SwaggerDocument;
+    const customerSchema = document.components.schemas.CustomerResponseDto;
+    expect(customerSchema.properties.id.type).toBe('string');
+    expect(customerSchema.properties.fullName.type).toBe('string');
+    expect(customerSchema.properties.email.type).toBe('string');
+    expect(customerSchema.properties.phone.type).toBe('string');
+    expect(customerSchema.properties.isActive.type).toBe('boolean');
+    expect(customerSchema.properties.createdAt.type).toBe('string');
+    expect(customerSchema.required).not.toContain('phone');
   });
 
   it('publishes the runtime /api paths in Swagger', async () => {

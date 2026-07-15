@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
@@ -14,9 +18,13 @@ export class CustomersService {
 
   async create(createCustomerDto: CreateCustomerDto): Promise<Customer> {
     const { email } = createCustomerDto;
-    const existing = await this.customerRepository.findOne({ where: { email } });
+    const existing = await this.customerRepository.findOne({
+      where: { email },
+    });
     if (existing) {
-      throw new BadRequestException(`El cliente con correo electrónico ${email} ya está registrado`);
+      throw new ConflictException(
+        `El cliente con correo electrónico ${email} ya está registrado`,
+      );
     }
 
     const customer = this.customerRepository.create(createCustomerDto);
@@ -28,20 +36,31 @@ export class CustomersService {
   }
 
   async findOne(id: string): Promise<Customer> {
-    const customer = await this.customerRepository.findOne({ where: { id, isActive: true } });
+    const customer = await this.customerRepository.findOne({
+      where: { id, isActive: true },
+    });
     if (!customer) {
-      throw new NotFoundException(`Cliente con ID ${id} no encontrado o inactivo`);
+      throw new NotFoundException(
+        `Cliente con ID ${id} no encontrado o inactivo`,
+      );
     }
     return customer;
   }
 
-  async update(id: string, updateCustomerDto: UpdateCustomerDto): Promise<Customer> {
+  async update(
+    id: string,
+    updateCustomerDto: UpdateCustomerDto,
+  ): Promise<Customer> {
     const customer = await this.findOne(id);
 
     if (updateCustomerDto.email && updateCustomerDto.email !== customer.email) {
-      const existing = await this.customerRepository.findOne({ where: { email: updateCustomerDto.email } });
+      const existing = await this.customerRepository.findOne({
+        where: { email: updateCustomerDto.email },
+      });
       if (existing) {
-        throw new BadRequestException(`El cliente con correo electrónico ${updateCustomerDto.email} ya está registrado`);
+        throw new ConflictException(
+          `El cliente con correo electrónico ${updateCustomerDto.email} ya está registrado`,
+        );
       }
     }
 
