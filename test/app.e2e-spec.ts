@@ -5,15 +5,42 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp, configureSwagger } from './../src/app.setup';
 
-type ProductResponse = { price: number };
+type ProductResponse = {
+  id: string;
+  description: string | null;
+  price: number;
+  stock: number;
+};
 type CustomerResponse = { id: string; phone: string | null; isActive: boolean };
+type SwaggerResponse = {
+  content?: Record<string, { schema?: { $ref?: string } }>;
+};
+type SwaggerProperty = {
+  type?: string;
+  enum?: string[];
+  maxLength?: number;
+  minLength?: number;
+  minimum?: number;
+};
+type SwaggerOperation = {
+  requestBody?: SwaggerResponse;
+  responses?: Record<string, SwaggerResponse>;
+};
 type SwaggerDocument = {
-  paths: Record<string, unknown>;
+  paths: Record<
+    string,
+    {
+      delete?: SwaggerOperation;
+      get?: SwaggerOperation;
+      patch?: SwaggerOperation;
+      post?: SwaggerOperation;
+    }
+  >;
   components: {
     schemas: Record<
       string,
       {
-        properties: Record<string, { type?: string; enum?: string[] }>;
+        properties: Record<string, SwaggerProperty>;
         enum?: string[];
         required?: string[];
       }
@@ -86,6 +113,148 @@ describe('AppController (e2e)', () => {
 
     expect(product.price).toBe(25.5);
     expect(typeof product.price).toBe('number');
+  });
+
+  it('manages products with optional descriptions, validation no-writes, and soft deletion', async () => {
+    const server = app.getHttpServer();
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const created = await request(server)
+      .post('/api/products')
+      .send({ name: `Product ${suffix}`, price: '12.50', stock: 0 })
+      .expect(201);
+    const product = created.body as ProductResponse;
+    expect(product.price).toBe(12.5);
+    expect(product.description).toBeNull();
+    expect(product.stock).toBe(0);
+
+    const updated = await request(server)
+      .patch(`/api/products/${product.id}`)
+      .send({ description: 'Compact keyboard', price: 15.75, stock: 2 })
+      .expect(200);
+    expect((updated.body as ProductResponse).description).toBe(
+      'Compact keyboard',
+    );
+    expect((updated.body as ProductResponse).price).toBe(15.75);
+    expect((updated.body as ProductResponse).stock).toBe(2);
+    await request(server)
+      .post('/api/products')
+      .send({ name: 'Invalid Price', price: 0, stock: 1 })
+      .expect(400);
+    await request(server)
+      .patch(`/api/products/${product.id}`)
+      .send({ name: '' })
+      .expect(400);
+    await request(server)
+      .patch(`/api/products/${product.id}`)
+      .send({ stock: -1 })
+      .expect(400);
+    const productAfterInvalid = await request(server)
+      .get(`/api/products/${product.id}`)
+      .expect(200);
+    expect(
+      (productAfterInvalid.body as ProductResponse & { name: string }).name,
+    ).toBe(`Product ${suffix}`);
+    expect((productAfterInvalid.body as ProductResponse).stock).toBe(2);
+    await request(server).delete(`/api/products/${product.id}`).expect(204);
+    await request(server).get(`/api/products/${product.id}`).expect(404);
+    const activeProducts = await request(server)
+      .get('/api/products')
+      .expect(200);
+    expect(
+      (activeProducts.body as ProductResponse[]).map(({ id }) => id),
+    ).not.toContain(product.id);
+
+    const document = (await request(server).get('/api/docs-json').expect(200))
+      .body as SwaggerDocument;
+    const productSchema = document.components.schemas.ProductResponseDto;
+    expect(productSchema.properties.id.type).toBe('string');
+    expect(productSchema.properties.description.type).toBe('string');
+    expect(productSchema.properties.price.type).toBe('number');
+    expect(productSchema.properties.stock.type).toBe('integer');
+    expect(productSchema.properties.isActive.type).toBe('boolean');
+    expect(productSchema.properties.createdAt.type).toBe('string');
+    expect(productSchema.required).not.toContain('description');
+    const productPaths = document.paths;
+    expect(
+      productPaths['/api/products'].post?.requestBody?.content?.[
+        'application/json'
+      ]?.schema?.$ref,
+    ).toBe('#/components/schemas/CreateProductDto');
+    expect(
+      productPaths['/api/products'].post?.responses?.['201']?.content?.[
+        'application/json'
+      ]?.schema?.$ref,
+    ).toBe('#/components/schemas/ProductResponseDto');
+    expect(
+      productPaths['/api/products'].post?.responses?.['400'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].get?.responses?.['200']?.content?.[
+        'application/json'
+      ]?.schema?.$ref,
+    ).toBe('#/components/schemas/ProductResponseDto');
+    expect(
+      productPaths['/api/products/{id}'].get?.responses?.['400'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].get?.responses?.['404'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].patch?.requestBody?.content?.[
+        'application/json'
+      ]?.schema?.$ref,
+    ).toBe('#/components/schemas/UpdateProductDto');
+    expect(
+      productPaths['/api/products/{id}'].patch?.responses?.['200'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].patch?.responses?.['400'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].patch?.responses?.['404'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].delete?.responses?.['204'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].delete?.responses?.['400'],
+    ).toBeDefined();
+    expect(
+      productPaths['/api/products/{id}'].delete?.responses?.['404'],
+    ).toBeDefined();
+    const expectProductRequestSchema = (
+      schema: (typeof document.components.schemas)[string],
+      required: string[],
+    ) => {
+      expect(schema.properties.name).toMatchObject({
+        type: 'string',
+        minLength: 1,
+        maxLength: 255,
+      });
+      expect(schema.properties.description.type).toBe('string');
+      expect(schema.properties.price).toMatchObject({
+        type: 'number',
+        minimum: 0.01,
+      });
+      expect(schema.properties.stock).toMatchObject({
+        type: 'integer',
+        minimum: 0,
+      });
+      expect(schema.required ?? []).toEqual(
+        required.length ? expect.arrayContaining(required) : [],
+      );
+      expect(schema.required ?? []).not.toContain('description');
+    };
+
+    expectProductRequestSchema(document.components.schemas.CreateProductDto, [
+      'name',
+      'price',
+      'stock',
+    ]);
+    expectProductRequestSchema(
+      document.components.schemas.UpdateProductDto,
+      [],
+    );
   });
 
   it('manages active customers, rejects invalid and duplicate writes, and soft deletes', async () => {

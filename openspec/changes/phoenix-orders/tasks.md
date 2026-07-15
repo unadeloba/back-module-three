@@ -35,7 +35,7 @@ Chain strategy: stacked-to-main
 ## Phase 2: Master Data
 
 - [x] 2.1 **RED → GREEN → REFACTOR:** test `src/customers` CRUD, omitted phone, soft deletion, invalid payload no-write, and duplicate create/update as 409; update DTO/service/controller/Swagger. Verify focused customers Jest and E2E.
-- [ ] 2.2 **RED → GREEN → REFACTOR:** test `src/products` CRUD, optional description, numeric price, zero stock, invalid price/stock no-write, and soft deletion; update DTO/service/controller/Swagger. Verify focused products Jest and E2E.
+- [x] 2.2 **RED → GREEN → REFACTOR:** test `src/products` CRUD, optional description, numeric price, zero stock, invalid price/stock no-write, and soft deletion; update DTO/service/controller/Swagger. Verify focused products Jest and E2E.
 
 ## Phase 3: Atomic Creation
 
