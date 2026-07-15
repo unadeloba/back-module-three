@@ -1,0 +1,80 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  issues: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Check contribution requirements
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate approved issue and PR type
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const body = pullRequest.body || '';
+            const issuePattern = /\b(?:closes|fixes|resolves)\s+#(\d+)\b/gi;
+            const issueNumbers = [...new Set(
+              [...body.matchAll(issuePattern)].map((match) => Number(match[1])),
+            )].sort((left, right) => left - right);
+            const errors = [];
+
+            if (issueNumbers.length === 0) {
+              errors.push(
+                'PR body must contain Closes #N, Fixes #N, or Resolves #N.',
+              );
+            }
+
+            for (const issueNumber of issueNumbers) {
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                });
+                if (issue.pull_request) {
+                  errors.push(`#${issueNumber} is a pull request, not an issue.`);
+                  continue;
+                }
+
+                const approved = issue.labels.some((label) =>
+                  (typeof label === 'string' ? label : label.name) ===
+                  'status:approved',
+                );
+                if (!approved) {
+                  errors.push(`#${issueNumber} must have status:approved.`);
+                }
+              } catch (error) {
+                if (error.status === 404) {
+                  errors.push(`#${issueNumber} does not exist.`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+
+            const typeLabels = pullRequest.labels
+              .map((label) => label.name)
+              .filter((name) => name.startsWith('type:'))
+              .sort();
+            if (typeLabels.length !== 1) {
+              errors.push(
+                `PR must have exactly one type:* label; found ${typeLabels.length}` +
+                `${typeLabels.length ? ` (${typeLabels.join(', ')})` : ''}.`,
+              );
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(errors.join('\n'));
+            } else {
+              core.info(
+                `Validated approved issue ${issueNumbers.map((number) => `#${number}`).join(', ')}` +
+                ` and PR label ${typeLabels[0]}.`,
+              );
+            }

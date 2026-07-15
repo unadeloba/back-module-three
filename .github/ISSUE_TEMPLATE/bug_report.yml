@@ -1,0 +1,71 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: 'fix(scope): '
+labels: [bug, status:needs-review]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched open and closed issues and found no duplicate.
+          required: true
+        - label: I understand this issue needs `status:approved` before a PR can be opened.
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: Describe the incorrect behavior clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide a numbered, minimal reproduction.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options: [macOS, Ubuntu, Other Linux, Windows, WSL]
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Agent or client
+      options:
+        [Claude Code, OpenCode, Gemini CLI, Cursor, Windsurf, Codex, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Shell
+      options: [bash, zsh, fish, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
