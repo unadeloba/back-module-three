@@ -1,0 +1,68 @@
+schema: spec-driven
+
+context: |
+  Tech stack: NestJS 11, TypeScript 5.7, Node.js 24, PostgreSQL 15, TypeORM.
+  Architecture: feature modules with controllers, services, DTOs, and entities.
+  API: Express routes are globally prefixed with /api at runtime.
+  Data: PostgreSQL is required for application-wired E2E tests.
+  Style: ESLint 9 with typescript-eslint and Prettier 3.
+
+strict_tdd: true
+
+testing:
+  unit:
+    available: true
+    command: npm test -- --runInBand
+    framework: Jest 30 with ts-jest and @nestjs/testing
+    verified: 2026-07-15
+  integration:
+    available: false
+    command: ''
+  e2e:
+    available: true
+    command: npm run test:e2e
+    framework: Jest, Supertest, Nest testing module
+    prerequisites: PostgreSQL reachable through DB_* configuration
+  coverage:
+    available: true
+    command: npm run test:cov
+    threshold: 0
+  quality:
+    linter:
+      available: true
+      command: npm run lint
+      note: Rewrites files and has known pre-existing failures; lint touched files directly.
+    type_checker:
+      available: true
+      command: npm run build
+    formatter:
+      available: true
+      command: npm run format
+      note: Rewrites files; format touched files directly.
+
+rules:
+  proposal:
+    - State affected feature modules, API contract impact, and rollback for risky changes.
+    - Ask before planning chained PRs; review budget is 400 changed lines.
+  specs:
+    - Use RFC 2119 keywords and Given/When/Then scenarios.
+    - Preserve /api runtime-prefix and validation-pipe behavior in API requirements.
+  design:
+    - Preserve transactional order creation and active-record invariants unless explicitly changed.
+  tasks:
+    - Group work by test-first, implementation, and verification phases.
+    - Keep tasks completable in one session.
+  apply:
+    guidelines:
+      - Follow feature-module conventions under src/<feature>/.
+      - Add or update a focused test before production behavior.
+    tdd: true
+    test_command: npm test -- --runInBand
+  verify:
+    test_command: npm test -- --runInBand
+    build_command: npm run build
+    coverage_command: npm run test:cov
+    coverage_threshold: 0
+    e2e_command: npm run test:e2e
+  archive:
+    - Warn before merging destructive deltas.

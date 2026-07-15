@@ -46,6 +46,12 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Agent-local registry
+.atl/
+
+# Local generated code index
+.codegraph/
+
 # Runtime data
 pids
 *.pid
