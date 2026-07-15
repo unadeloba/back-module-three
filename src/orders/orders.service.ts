@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -143,8 +143,71 @@ export class OrdersService {
   }
 
   async updateStatus(id: string, status: OrderStatus): Promise<Order> {
-    const order = await this.findOne(id);
-    order.status = status;
-    return this.orderRepository.save(order);
+    return this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!order) {
+        throw new NotFoundException(`Pedido con ID ${id} no encontrado`);
+      }
+
+      if (!this.isAllowedTransition(order.status, status)) {
+        throw new ConflictException(
+          `No se puede cambiar el pedido de ${order.status} a ${status}`,
+        );
+      }
+
+      if (status === OrderStatus.CANCELLED) {
+        await this.restoreStock(manager, id);
+      }
+
+      order.status = status;
+      await manager.save(Order, order);
+      const updatedOrder = await manager.findOne(Order, {
+        where: { id },
+        relations: { customer: true, items: { product: true } },
+      });
+      if (!updatedOrder) {
+        throw new NotFoundException(`Pedido con ID ${id} no encontrado`);
+      }
+      return updatedOrder;
+    });
+  }
+
+  private isAllowedTransition(from: OrderStatus, to: OrderStatus): boolean {
+    const nextStatus: Partial<Record<OrderStatus, OrderStatus>> = {
+      [OrderStatus.PENDING]: OrderStatus.CONFIRMED,
+      [OrderStatus.CONFIRMED]: OrderStatus.SHIPPED,
+      [OrderStatus.SHIPPED]: OrderStatus.DELIVERED,
+    };
+
+    return (
+      nextStatus[from] === to ||
+      (to === OrderStatus.CANCELLED &&
+        [OrderStatus.PENDING, OrderStatus.CONFIRMED].includes(from))
+    );
+  }
+
+  private async restoreStock(manager: EntityManager, orderId: string) {
+    const items = await manager.find(OrderItem, { where: { orderId } });
+    const sortedItems = [...items].sort((first, second) =>
+      first.productId.localeCompare(second.productId),
+    );
+
+    for (const item of sortedItems) {
+      const product = await manager.findOne(Product, {
+        where: { id: item.productId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!product) {
+        throw new NotFoundException(
+          `Producto con ID ${item.productId} no encontrado`,
+        );
+      }
+
+      product.stock += item.quantity;
+      await manager.save(Product, product);
+    }
   }
 }

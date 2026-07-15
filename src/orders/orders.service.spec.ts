@@ -6,7 +6,7 @@ import {
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Customer } from '../customers/entities/customer.entity';
 import { Product } from '../products/entities/product.entity';
-import { Order } from './entities/order.entity';
+import { Order, OrderStatus } from './entities/order.entity';
 import { OrdersService } from './orders.service';
 
 describe('OrdersService.create', () => {
@@ -133,5 +133,108 @@ describe('OrdersService.create', () => {
 
     expect(manager.save).not.toHaveBeenCalled();
     expect(products.get('product-a')?.stock).toBe(5);
+  });
+});
+
+describe('OrdersService.updateStatus', () => {
+  let order: Order;
+  let manager: jest.Mocked<Pick<EntityManager, 'find' | 'findOne' | 'save'>>;
+  let transaction: jest.Mock<
+    Promise<Order>,
+    [(callback: (manager: EntityManager) => Promise<Order>) => Promise<Order>]
+  >;
+  let service: OrdersService;
+
+  beforeEach(() => {
+    order = {
+      id: 'order-1',
+      status: 'PENDING' as Order['status'],
+      items: [],
+    } as Order;
+    manager = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(order),
+      save: jest.fn((target, entity) => Promise.resolve(entity ?? target)),
+    };
+    transaction = jest.fn((callback) => callback(manager as EntityManager));
+    service = new OrdersService(
+      {} as Repository<Order>,
+      { transaction } as DataSource,
+    );
+  });
+
+  it.each([
+    ['PENDING', 'CONFIRMED'],
+    ['CONFIRMED', 'SHIPPED'],
+    ['SHIPPED', 'DELIVERED'],
+    ['PENDING', 'CANCELLED'],
+    ['CONFIRMED', 'CANCELLED'],
+  ])('locks and permits %s to %s', async (from, to) => {
+    order.status = from as Order['status'];
+
+    const result = await service.updateStatus('order-1', to as Order['status']);
+
+    expect(result.status).toBe(to);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(manager.findOne).toHaveBeenCalledWith(Order, {
+      where: { id: 'order-1' },
+      lock: { mode: 'pessimistic_write' },
+    });
+    expect(manager.save).toHaveBeenCalledWith(Order, order);
+  });
+
+  it.each([
+    ['PENDING', 'SHIPPED'],
+    ['CONFIRMED', 'PENDING'],
+    ['SHIPPED', 'CANCELLED'],
+    ['DELIVERED', 'CONFIRMED'],
+    ['CANCELLED', 'PENDING'],
+  ])('rejects %s to %s without mutation', async (from, to) => {
+    order.status = from as Order['status'];
+
+    await expect(
+      service.updateStatus('order-1', to as Order['status']),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(order.status).toBe(from);
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('restores canonical lines once after locking products by sorted ID', async () => {
+    const products = new Map([
+      ['product-a', { id: 'product-a', stock: 1 } as Product],
+      ['product-b', { id: 'product-b', stock: 2 } as Product],
+    ]);
+    order.items = [];
+    manager.find.mockResolvedValue([
+      { productId: 'product-b', quantity: 3 },
+      { productId: 'product-a', quantity: 4 },
+    ] as never);
+    manager.findOne.mockImplementation((entity, options) => {
+      if (entity === Order) {
+        return Promise.resolve(order);
+      }
+      return Promise.resolve(
+        products.get(options?.where?.id as string) ?? null,
+      );
+    });
+
+    const result = await service.updateStatus('order-1', OrderStatus.CANCELLED);
+
+    expect(result.status).toBe(OrderStatus.CANCELLED);
+    expect(products.get('product-a')?.stock).toBe(5);
+    expect(products.get('product-b')?.stock).toBe(5);
+    expect(
+      manager.findOne.mock.calls.filter(([entity]) => entity === Product),
+    ).toEqual([
+      [
+        Product,
+        { where: { id: 'product-a' }, lock: { mode: 'pessimistic_write' } },
+      ],
+      [
+        Product,
+        { where: { id: 'product-b' }, lock: { mode: 'pessimistic_write' } },
+      ],
+    ]);
   });
 });

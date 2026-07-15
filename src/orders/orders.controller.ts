@@ -53,6 +53,7 @@ export class OrdersController {
   @ApiOkResponse({ type: OrderResponseDto })
   @ApiBadRequestResponse()
   @ApiNotFoundResponse()
+  @ApiConflictResponse()
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrderStatusDto: UpdateOrderStatusDto,

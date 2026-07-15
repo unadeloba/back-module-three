@@ -44,5 +44,5 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Lifecycle and Verification
 
-- [ ] 4.1 **RED → GREEN → REFACTOR:** test allowed progression, rejected skip/reversal/terminal status without stock change, and cancel only from pending/confirmed; implement locked transition table in `orders.service.ts`. Verify focused Jest.
-- [ ] 4.2 **RED → GREEN → REFACTOR:** test repeated/concurrent cancellation restores each line exactly once; lock order/products and transactionally restock. Verify PostgreSQL E2E, `npm test -- --runInBand`, `npm run build`.
+- [x] 4.1 **RED → GREEN → REFACTOR:** test allowed progression, rejected skip/reversal/terminal status without stock change, and cancel only from pending/confirmed; implement locked transition table in `orders.service.ts`. Verify focused Jest.
+- [x] 4.2 **RED → GREEN → REFACTOR:** test repeated/concurrent cancellation restores each line exactly once; lock order/products and transactionally restock. Verify PostgreSQL E2E, `npm test -- --runInBand`, `npm run build`.

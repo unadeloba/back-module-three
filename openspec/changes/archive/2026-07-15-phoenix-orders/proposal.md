@@ -2,7 +2,7 @@
 
 ## Intent
 
-Deliver the PRD’s local NestJS/PostgreSQL MVP as a stable, documented API for customer, product, and order operations. The PRD remains the baseline; this proposal records the approved order lifecycle, inventory, line-item, duplicate-product, and optional-description clarifications.
+Deliver the PRD's local NestJS/PostgreSQL MVP as a stable, documented API for customer, product, and order operations. The PRD remains the baseline; this proposal records the approved order lifecycle, inventory, line-item, duplicate-product, and optional-description clarifications.
 
 ## Scope
 
