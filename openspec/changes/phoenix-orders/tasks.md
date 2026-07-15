@@ -30,7 +30,7 @@ Chain strategy: stacked-to-main
 ## Phase 1: Contract and Bootstrap
 
 - [x] 1.1 **RED → GREEN → REFACTOR:** add `src/app.setup.spec.ts`/`test/app.e2e-spec.ts` for `/api`, whitelist/UUID 400-without-mutation, numeric output and Swagger route discovery; extract `src/app.setup.ts`, update `src/main.ts`, and add the Swagger dependency/bootstrap. Verify focused Jest, E2E, build.
-- [ ] 1.2 **RED → GREEN → REFACTOR:** add DTO/mapper tests for canonical `unitPrice`, `subtotal`, `total`, `SHIPPED`; create `src/orders/mappers/*` and response DTOs, update order entities/controllers and their Swagger decorators. Verify `npm test -- --runInBand orders`.
+- [x] 1.2 **RED → GREEN → REFACTOR:** add DTO/mapper tests for canonical `unitPrice`, `subtotal`, `total`, `SHIPPED`; create `src/orders/mappers/*` and response DTOs, update order entities/controllers and their Swagger decorators. Verify `npm test -- --runInBand orders`.
 
 ## Phase 2: Master Data
 

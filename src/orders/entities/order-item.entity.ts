@@ -1,6 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import type { Order } from './order.entity';
-import { Product, ColumnNumericTransformer } from '../../products/entities/product.entity';
+import {
+  Product,
+  ColumnNumericTransformer,
+} from '../../products/entities/product.entity';
 
 @Entity('order_items')
 export class OrderItem {
@@ -25,11 +34,12 @@ export class OrderItem {
   quantity: number;
 
   @Column({
+    name: 'price',
     type: 'decimal',
     precision: 10,
     scale: 2,
     nullable: false,
     transformer: new ColumnNumericTransformer(),
   })
-  price: number;
+  unitPrice: number;
 }
