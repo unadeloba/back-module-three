@@ -53,6 +53,8 @@ type OrderResponse = {
   status: string;
   total: number;
   items: Array<{
+    productId: string;
+    quantity: number;
     unitPrice: number;
     subtotal: number;
   }>;
@@ -385,6 +387,92 @@ describe('AppController (e2e)', () => {
     expect(document.components.schemas.OrderStatus.enum).toContain('SHIPPED');
     expect(itemSchema.properties.unitPrice.type).toBe('number');
     expect(itemSchema.properties.subtotal.type).toBe('number');
+  });
+
+  it('creates immutable price snapshots without overselling or partial stock writes', async () => {
+    const server = app.getHttpServer();
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const customer = await request(server)
+      .post('/api/customers')
+      .send({
+        fullName: 'Atomic Customer',
+        email: `atomic-${suffix}@example.com`,
+      })
+      .expect(201);
+    const product = await request(server)
+      .post('/api/products')
+      .send({ name: `Atomic Product ${suffix}`, price: 10, stock: 5 })
+      .expect(201);
+    const customerId = (customer.body as CustomerResponse).id;
+    const productId = (product.body as ProductResponse).id;
+    const orderPayload = { customerId, items: [{ productId, quantity: 3 }] };
+    const insufficientPayload = {
+      customerId,
+      items: [{ productId, quantity: 6 }],
+    };
+    const ordersBefore = await request(server).get('/api/orders').expect(200);
+    const orderCountBefore = (ordersBefore.body as OrderResponse[]).length;
+
+    await request(server)
+      .post('/api/orders')
+      .send(insufficientPayload)
+      .expect(409);
+    const afterInsufficient = await request(server)
+      .get(`/api/products/${productId}`)
+      .expect(200);
+    expect((afterInsufficient.body as ProductResponse).stock).toBe(5);
+    const ordersAfterInsufficient = await request(server)
+      .get('/api/orders')
+      .expect(200);
+    expect(ordersAfterInsufficient.body as OrderResponse[]).toHaveLength(
+      orderCountBefore,
+    );
+
+    const concurrent = await Promise.all([
+      request(server).post('/api/orders').send(orderPayload),
+      request(server).post('/api/orders').send(orderPayload),
+    ]);
+    expect(concurrent.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const created = concurrent.find(({ status }) => status === 201);
+    expect(created).toBeDefined();
+    const order = created?.body as OrderResponse;
+    expect(order.items).toEqual([
+      expect.objectContaining({
+        productId,
+        quantity: 3,
+        unitPrice: 10,
+        subtotal: 30,
+      }),
+    ]);
+    expect(order.total).toBe(30);
+    const afterConcurrent = await request(server)
+      .get(`/api/products/${productId}`)
+      .expect(200);
+    expect((afterConcurrent.body as ProductResponse).stock).toBe(2);
+
+    await request(server)
+      .patch(`/api/products/${productId}`)
+      .send({ price: 20 })
+      .expect(200);
+    const persisted = await request(server)
+      .get(`/api/orders/${order.id}`)
+      .expect(200);
+    expect((persisted.body as OrderResponse).items).toEqual([
+      expect.objectContaining({
+        productId,
+        quantity: 3,
+        unitPrice: 10,
+        subtotal: 30,
+      }),
+    ]);
+    expect((persisted.body as OrderResponse).total).toBe(30);
+    await request(server).patch(`/api/orders/${order.id}/items`).expect(404);
+
+    const document = (await request(server).get('/api/docs-json').expect(200))
+      .body as SwaggerDocument;
+    expect(
+      document.paths['/api/orders'].post?.responses?.['409'],
+    ).toBeDefined();
   });
 
   afterEach(async () => {

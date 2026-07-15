@@ -39,8 +39,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Atomic Creation
 
-- [ ] 3.1 **RED → GREEN → REFACTOR:** add `src/orders/orders.service.spec.ts` for duplicate aggregation, inactive/missing participants and invalid quantities with no mutation; implement sorted locked transaction in `orders.service.ts`. Verify focused Jest.
-- [ ] 3.2 **RED → GREEN → REFACTOR:** add transaction/E2E tests for insufficient-stock rollback, concurrent oversell, price snapshots and immutable canonical lines; implement mapper persistence/reads. Verify PostgreSQL `npm run test:e2e`.
+- [x] 3.1 **RED → GREEN → REFACTOR:** add `src/orders/orders.service.spec.ts` for duplicate aggregation, inactive/missing participants and invalid quantities with no mutation; implement sorted locked transaction in `orders.service.ts`. Verify focused Jest.
+- [x] 3.2 **RED → GREEN → REFACTOR:** add transaction/E2E tests for insufficient-stock rollback, concurrent oversell, price snapshots and immutable canonical lines; implement mapper persistence/reads. Verify PostgreSQL `npm run test:e2e`.
 
 ## Phase 4: Lifecycle and Verification
 

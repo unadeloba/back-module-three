@@ -12,6 +12,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -28,6 +29,8 @@ export class OrdersController {
   @Post()
   @ApiCreatedResponse({ type: OrderResponseDto })
   @ApiBadRequestResponse()
+  @ApiNotFoundResponse()
+  @ApiConflictResponse()
   async create(@Body() createOrderDto: CreateOrderDto) {
     return mapOrderResponse(await this.ordersService.create(createOrderDto));
   }

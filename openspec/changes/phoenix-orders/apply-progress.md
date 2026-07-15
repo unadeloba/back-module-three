@@ -4,8 +4,8 @@
 
 - Delivery strategy: chained PRs
 - Chain strategy: stacked-to-main
-- Current slice: product contract, approved issue #13
-- Branch/base: `feat/product-contract` from clean updated `main` after merged PR #14
+- Current slice: atomic order creation, approved issue #16
+- Branch/base: `feat/atomic-order-creation` from clean updated `main` after merged PR #15
 - Review budget: 400 authored additions and deletions; generated `package-lock.json` is retained in the snapshot and excluded from reviewer burden.
 
 ## Completed Tasks
@@ -14,6 +14,8 @@
 - [x] 1.2 Canonical order response DTOs/mappers, numeric totals, `SHIPPED`, and order Swagger responses.
 - [x] 2.1 Customer CRUD validation, soft deletion, and duplicate-email conflict.
 - [x] 2.2 Product CRUD validation, explicit response schema, numeric price/stock boundaries, and soft deletion.
+- [x] 3.1 Atomic duplicate aggregation and locked creation.
+- [x] 3.2 Creation rollback, concurrency, snapshots, and immutable lines.
 
 ## TDD Cycle Evidence
 
@@ -23,6 +25,8 @@
 | 1.2 | `src/orders/mappers/order-response.mapper.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | `npm test -- --runInBand` → exit 0, 2 suites/4 tests; `npm run test:e2e` → exit 0, PostgreSQL `db` only, 1 suite/4 tests | `npm test -- --runInBand orders/mappers/order-response.mapper.spec.ts` → failed: `Cannot find module './order-response.mapper'` | Focused mapper → exit 0, 1 suite/2 tests; final full unit → exit 0, 3 suites/6 tests; E2E → exit 0, 1 suite/5 tests | Two differently priced line sets prove derived subtotals and order totals; second case proves `SHIPPED` and non-integer numeric money | Kept persistence column `order_items.price` while exposing `unitPrice`; isolated pure mapper and response DTOs; all final checks green |
 | 2.1 | `src/customers/customers.service.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | Customer unit exit 0, 1 suite/3 tests; E2E exit 0, PostgreSQL `db` only, 1 suite/6 tests | Service expected `ConflictException`, received `BadRequestException`; E2E expected 409, got 400; Swagger `CustomerResponseDto` schema was absent | Focused customer → exit 0, 1 suite/3 tests; E2E → exit 0, 1 suite/6 tests | Omitted phone, active CRUD, invalid email no-write, duplicate create/update 409, soft deletion, and documented response fields | Added minimal response DTO with explicit Swagger fields; formatted paths and focused tests stayed green |
 | 2.2 | `src/products/dto/product-response.dto.spec.ts`, `src/products/products.service.spec.ts`, `test/app.e2e-spec.ts` | Unit, E2E | `npm test -- --runInBand` → exit 0, 4 suites/9 tests; `npm run test:e2e` → exit 0, PostgreSQL `db` only, 1 suite/6 tests | DTO unit → failed: `Cannot find module './product-response.dto'`; focused PostgreSQL E2E → failed: `ProductResponseDto` schema was undefined; request-schema E2E → failed because `CreateProductDto` properties were undefined; response-stock E2E → expected `integer`, received `number`; empty-name PATCH → expected 400, received 200; invalid-stock proof was added first and passed against existing DTO validation | Focused DTO → exit 0, 1 suite/1 test; focused PostgreSQL E2E → exit 0, 1 suite/1 test (6 skipped); focused products → exit 0, 2 suites/3 tests; request-schema, response-stock, empty-name, and invalid-stock follow-up E2E → exit 0, 1 suite/1 test (6 skipped) | Product E2E proves zero stock, omitted/supplied description, numeric price, invalid create/empty-name/negative-stock update no-write, soft deletion, response/error operations, discoverable request constraints, and integer response stock; service tests prove active CRUD/soft deactivation | Added only explicit response/request DTO metadata and controller Swagger decorators; replaced PATCH max-only validation with length 1..255; invalid-stock proof required no production change; formatted touched files and reran focused tests |
+| 3.1 | `src/orders/orders.service.spec.ts` | Unit | `npm test -- --runInBand` → exit 0, 6 suites/12 tests | Focused service → failed: duplicates produced multiple lines; invalid quantities resolved; missing participants/insufficient stock returned 400 | Focused service → exit 0, 1 suite/7 tests | Duplicate sums, sorted locks, empty/zero/fractional quantities, missing/inactive participants, and aggregate shortage | Normalized before transaction; all focused tests stayed green |
+| 3.2 | `test/app.e2e-spec.ts` | E2E | `npm run test:e2e` → exit 0, PostgreSQL `db`, 1 suite/7 tests | Focused E2E → failed: Swagger order-create 409 response was absent | Focused E2E → exit 0, 1 suite/1 test (7 skipped); full E2E → exit 0, 1 suite/8 tests | Insufficient-stock rollback, concurrent 201/409, non-negative stock, price snapshot, immutable lines | Added only the 409 Swagger category; existing mapper persistence/read behavior passed runtime proof |
 
 Historical candidate evidence remains preserved for task 1.1 only. Task 1.2 was implemented independently from current main; no lifecycle, aggregation, locking, or restocking candidate hunks were restored.
 
@@ -66,17 +70,24 @@ Historical candidate evidence remains preserved for task 1.1 only. Task 1.2 was 
 | Focused quality and diff | `npx prettier --check` and `npx eslint` on task-2.2 TypeScript paths → exit 0; `git diff --check` → exit 0. |
 | Rollback boundary | Revert `src/products/dto/product-response.dto.ts`, its focused tests, `src/products/products.controller.ts`, task-2.2 product E2E assertions, and this task checkbox/progress entry. This removes only product response documentation/coverage while retaining the pre-existing product service behavior and tasks 1.1/1.2/2.1. |
 
+### Tasks 3.1–3.2 Work Unit Evidence
+
+| Evidence | Exact result |
+| --- | --- |
+| Focused tests | `npm test -- --runInBand orders/orders.service.spec.ts` → exit 0, 1 suite/7 tests; `npm run test:e2e -- -t "creates immutable price snapshots"` → exit 0, 1 passed/7 skipped. |
+| Runtime harness | `docker compose up -d db && npm run test:e2e; docker compose stop db` → exit 0, 1 suite/8 tests; PostgreSQL proves rollback, concurrent oversell prevention, immutable creation-time price snapshots, and no line route. |
+| Full unit, build, quality | `npm test -- --runInBand` → exit 0, 7 suites/19 tests; `npm run build`, focused Prettier/ESLint, and `git diff --check` → exit 0. |
+| Rollback boundary | Revert `src/orders/orders.service.ts`, `src/orders/orders.controller.ts`, `src/orders/orders.service.spec.ts`, task-3 E2E assertions, and these task/progress entries; this removes only creation normalization/locking categories and proof. |
+
 ## Remaining Tasks
 
-- [ ] 3.1 Atomic duplicate aggregation and locked creation.
-- [ ] 3.2 Creation rollback, concurrency, snapshots, and immutable lines.
 - [ ] 4.1 Lifecycle transition table.
 - [ ] 4.2 Exactly-once cancellation restocking and final verification.
 
 ## Deviations
 
-None — task 2.2 adds only the explicit `ProductResponseDto`, controller Swagger decorators, and focused evidence while preserving existing active-product behavior.
+None — tasks 3.1–3.2 match the normalized, sorted-lock creation design and preserve the existing public response mapping.
 
 ## Status
 
-4/8 tasks complete. Ready for the next stacked slice after this slice is independently reviewed and merged.
+6/8 tasks complete. Ready for the lifecycle/restocking stacked slice after this slice is independently reviewed and merged.
