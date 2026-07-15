@@ -1,29 +1,61 @@
-import { Controller, Get, Post, Body, Patch, Param, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import {
+  ApiBadRequestResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { OrderResponseDto } from './dto/order-response.dto';
+import { mapOrderResponse } from './mappers/order-response.mapper';
 
+@ApiTags('orders')
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
-  create(@Body() createOrderDto: CreateOrderDto) {
-    return this.ordersService.create(createOrderDto);
+  @ApiCreatedResponse({ type: OrderResponseDto })
+  @ApiBadRequestResponse()
+  async create(@Body() createOrderDto: CreateOrderDto) {
+    return mapOrderResponse(await this.ordersService.create(createOrderDto));
   }
 
   @Get()
-  findAll() {
-    return this.ordersService.findAll();
+  @ApiOkResponse({ type: OrderResponseDto, isArray: true })
+  async findAll() {
+    return (await this.ordersService.findAll()).map(mapOrderResponse);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.ordersService.findOne(id);
+  @ApiOkResponse({ type: OrderResponseDto })
+  @ApiBadRequestResponse()
+  @ApiNotFoundResponse()
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return mapOrderResponse(await this.ordersService.findOne(id));
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() updateOrderStatusDto: UpdateOrderStatusDto) {
-    return this.ordersService.updateStatus(id, updateOrderStatusDto.status);
+  @ApiOkResponse({ type: OrderResponseDto })
+  @ApiBadRequestResponse()
+  @ApiNotFoundResponse()
+  async updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateOrderStatusDto: UpdateOrderStatusDto,
+  ) {
+    return mapOrderResponse(
+      await this.ordersService.updateStatus(id, updateOrderStatusDto.status),
+    );
   }
 }

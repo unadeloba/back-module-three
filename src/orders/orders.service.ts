@@ -59,7 +59,7 @@ export class OrdersService {
         orderItem.product = product;
         orderItem.productId = productId;
         orderItem.quantity = quantity;
-        orderItem.price = product.price;
+        orderItem.unitPrice = product.price;
 
         orderItemsToSave.push(orderItem);
       }
