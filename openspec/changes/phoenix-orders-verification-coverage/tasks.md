@@ -40,4 +40,4 @@ Branch: child from/target `fix/order-lifecycle-cancellation`; its diff contains 
 ## Phase 4: Child Integration and Receipt
 
 - [x] 4.1 Check child is ≤400 authored lines with no inherited-parent diff; if over, stop and split before apply. Rollback: revert only this child from `fix/order-lifecycle-cancellation`.
-- [ ] 4.2 Merge to parent; fresh exact-parent receipt runs `npm test -- --runInBand`, `npm run build`, `npm run test:cov -- --runInBand`, `docker compose up -d db && npm run test:e2e && docker compose stop db`, focused format/lint, and `git diff --check`; record 27/27, zero blockers, new hashes/revision in `verify-report.md`.
+- [x] 4.2 Merge to parent; fresh exact-parent receipt runs `npm test -- --runInBand`, `npm run build`, `npm run test:cov -- --runInBand`, `docker compose up -d db && npm run test:e2e && docker compose stop db`, focused format/lint, and `git diff --check`; record 27/27, zero blockers, new hashes/revision in `verify-report.md`.
