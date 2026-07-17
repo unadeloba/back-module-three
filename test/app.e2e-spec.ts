@@ -122,6 +122,13 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 
+  it('/api/health (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200)
+      .expect({ status: 'ok' });
+  });
+
   it('rejects malformed UUIDs and undeclared fields without creating a customer', async () => {
     const server = app.getHttpServer();
     const customersBefore = await request(server)

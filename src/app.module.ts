@@ -22,7 +22,7 @@ import { OrdersModule } from './orders/orders.module';
         password: configService.get<string>('DB_PASSWORD', 'nest_password'),
         database: configService.get<string>('DB_NAME', 'nest_db'),
         autoLoadEntities: true,
-        synchronize: true, // TODO(security): Turn off in production, use migrations instead
+        synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
       inject: [ConfigService],
     }),
