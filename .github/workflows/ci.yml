@@ -132,7 +132,8 @@ jobs:
                 {"name": "PORT", "value": "3000"},
                 {"name": "DB_HOST", "value": "$DB_HOST"},
                 {"name": "DB_PORT", "value": "5432"},
-                {"name": "DB_NAME", "value": "phoenix_orders"}
+                {"name": "DB_NAME", "value": "phoenix_orders"},
+                {"name": "DB_SSL", "value": "true"}
               ],
               "secrets": [
                 {"name": "DB_USERNAME", "valueFrom": "$DB_SECRET_ARN:username::"},
