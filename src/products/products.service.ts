@@ -22,14 +22,21 @@ export class ProductsService {
   }
 
   async findOne(id: string): Promise<Product> {
-    const product = await this.productRepository.findOne({ where: { id, isActive: true } });
+    const product = await this.productRepository.findOne({
+      where: { id, isActive: true },
+    });
     if (!product) {
-      throw new NotFoundException(`Producto con ID ${id} no encontrado o inactivo`);
+      throw new NotFoundException(
+        `Producto con ID ${id} no encontrado o inactivo`,
+      );
     }
     return product;
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> {
+  async update(
+    id: string,
+    updateProductDto: UpdateProductDto,
+  ): Promise<Product> {
     const product = await this.findOne(id);
     Object.assign(product, updateProductDto);
     return this.productRepository.save(product);
