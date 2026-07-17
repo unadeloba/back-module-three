@@ -76,7 +76,6 @@ jobs:
     needs: verify-and-package
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: demo
     permissions:
       contents: read
       id-token: write
