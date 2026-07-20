@@ -17,6 +17,7 @@ describe('configureApp', () => {
   it('sets the /api prefix and transforms whitelisted payload values', async () => {
     let configuredPipe: ValidationPipe;
     const app = {
+      enableCors: jest.fn(),
       setGlobalPrefix: jest.fn(),
       useGlobalPipes: jest.fn((pipe: ValidationPipe) => {
         configuredPipe = pipe;
@@ -37,6 +38,7 @@ describe('configureApp', () => {
   it('rejects undeclared payload fields before they reach a controller', async () => {
     let configuredPipe: ValidationPipe;
     const app = {
+      enableCors: jest.fn(),
       setGlobalPrefix: jest.fn(),
       useGlobalPipes: jest.fn((pipe: ValidationPipe) => {
         configuredPipe = pipe;
