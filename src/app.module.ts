@@ -27,6 +27,8 @@ import { OrdersModule } from './orders/orders.module';
             : false,
         autoLoadEntities: true,
         synchronize: configService.get<string>('NODE_ENV') !== 'production',
+        migrationsRun: true,
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
       }),
       inject: [ConfigService],
     }),
