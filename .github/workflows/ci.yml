@@ -80,9 +80,9 @@ jobs:
       contents: read
       id-token: write
     env:
-      AWS_REGION: us-east-1
-      AWS_ROLE_ARN: arn:aws:iam::559846690180:role/phoenix-orders-demo-backend-deploy
-      PROJECT_NAME: phoenix-orders-demo
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN_BACKEND }}
+      PROJECT_NAME: ${{ secrets.BACKEND_PROJECT_NAME }}
 
     steps:
       - name: Check out source
