@@ -5,6 +5,7 @@ export const API_PREFIX = 'api';
 export const SWAGGER_PATH = `${API_PREFIX}/docs`;
 
 export function configureApp(app: INestApplication): void {
+  app.enableCors();
   app.setGlobalPrefix(API_PREFIX);
   app.useGlobalPipes(
     new ValidationPipe({
