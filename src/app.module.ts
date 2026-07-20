@@ -21,7 +21,10 @@ import { OrdersModule } from './orders/orders.module';
         username: configService.get<string>('DB_USERNAME', 'nest_user'),
         password: configService.get<string>('DB_PASSWORD', 'nest_password'),
         database: configService.get<string>('DB_NAME', 'nest_db'),
-        ssl: { rejectUnauthorized: false },
+        ssl:
+          configService.get<string>('DB_SSL') === 'true'
+            ? { rejectUnauthorized: false }
+            : false,
         autoLoadEntities: true,
         synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
