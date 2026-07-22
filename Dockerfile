@@ -1,5 +1,5 @@
-# Stage 1: Development (used by docker-compose for local hot-reload)
-FROM node:20-alpine AS development
+# Stage 1: Development 
+FROM node:24.18.0-alpine3.24 AS development
 
 WORKDIR /usr/src/app
 
@@ -12,7 +12,7 @@ COPY . .
 CMD ["npm", "run", "start:dev"]
 
 # Stage 2: Production Dependencies (clean, no devDependencies)
-FROM node:20-alpine AS prod-deps
+FROM node:24.18.0-alpine3.24 AS prod-deps
 
 WORKDIR /usr/src/app
 
@@ -21,7 +21,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Stage 3: Build
-FROM node:20-alpine AS build
+FROM node:24.18.0-alpine3.24 AS build
 
 WORKDIR /usr/src/app
 
@@ -33,8 +33,8 @@ COPY . .
 
 RUN npm run build
 
-# Stage 4: Production (Ultra-lightweight & hardened)
-FROM node:20-alpine AS production
+# Stage 4: Production
+FROM node:24.18.0-alpine3.24 AS production
 
 # Security patch OS packages (updates OpenSSL, libssl3, etc.)
 # npm and corepack are NOT needed at runtime - only 'node dist/main' is executed
