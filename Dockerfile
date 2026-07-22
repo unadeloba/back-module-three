@@ -18,7 +18,7 @@ WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Stage 3: Build
 FROM node:24.18.0-alpine3.24 AS build
