@@ -35,6 +35,28 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed by Gitleaks to scan full commit history
+
+      # ─────────────────────────────────────────────
+      # 1. SECRETS SCANNER — Gitleaks
+      # Scans the FULL git history for hardcoded passwords, tokens or API keys.
+      # Fails the pipeline immediately if any secret is found in any commit.
+      # ─────────────────────────────────────────────
+      - name: "[Security] Secrets Scanner - Gitleaks"
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ─────────────────────────────────────────────
+      # 2. VALIDACION DE ESTANDARES — Hadolint
+      # Validates that the Dockerfile follows Docker/CIS best-practice
+      # standards (pinned versions, non-root user, no latest tags, etc.).
+      # ─────────────────────────────────────────────
+      - name: "[Standards] Dockerfile Standards - Hadolint"
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -45,13 +67,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint checks
+      # ─────────────────────────────────────────────
+      # 3. LINTERS — ESLint
+      # Validates TypeScript code quality and style standards.
+      # ─────────────────────────────────────────────
+      - name: "[Linter] Code Linter - ESLint"
         run: npm run lint && git diff --exit-code
 
-      - name: Run unit tests with coverage
+      # ─────────────────────────────────────────────
+      # 4. VALIDACION DE ESTANDARES — Unit & E2E Tests with Coverage
+      # Measures test coverage as a software quality standard.
+      # ─────────────────────────────────────────────
+      - name: "[Standards] Unit tests with coverage"
         run: npm run test:cov -- --runInBand
 
-      - name: Run end-to-end tests
+      - name: "[Standards] End-to-end tests"
         run: npm run test:e2e -- --runInBand
         env:
           DB_HOST: localhost
@@ -70,6 +100,83 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 30
+
+      # ─────────────────────────────────────────────
+      # 5. BUILD IMAGE (needed for runtime + image scan)
+      # Build the final Docker image locally in the CI runner.
+      # This image is used by both the runtime audit and the image-level
+      # vulnerability scanner that follows.
+      # ─────────────────────────────────────────────
+      - name: Build Docker image for security audit
+        run: docker build -t backend-runtime-check .
+
+      # ─────────────────────────────────────────────
+      # 6. SEGURIDAD EN TIEMPO DE EJECUCION — Docker Bench for Security
+      # Audits the running container against CIS Docker Benchmark checks
+      # (container runtime config, image hygiene, Docker daemon settings).
+      # NOTE: Some host-level checks (auditd, kernel) will show [WARN] because
+      # the GitHub Actions runner is a shared ephemeral VM — this is expected.
+      # The relevant sections are "Container Images" and "Container Runtime".
+      # The || true prevents pipeline failure while the team defines thresholds.
+      # ─────────────────────────────────────────────
+      - name: "[Security] Runtime Security - Docker Bench for Security"
+        run: |
+          docker run --rm --net host --pid host --userns host \
+            --cap-add audit_control \
+            -e DOCKER_CONTENT_TRUST=$DOCKER_CONTENT_TRUST \
+            -v /var/lib:/var/lib:ro \
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \
+            --label docker_bench_security \
+            docker/docker-bench-security || true
+
+      # ─────────────────────────────────────────────
+      # 7. SCANNER DE VULNERABILIDADES — Trivy (filesystem + image)
+      # - fs scan: detects CVEs in node_modules and source dependencies.
+      # - image scan: detects CVEs in OS packages inside the final Docker image
+      #   (e.g. libc6, zlib from the distroless base layer).
+      # Fails the pipeline on CRITICAL or HIGH severity findings.
+      # ─────────────────────────────────────────────
+      - name: "[Security] Vulnerability Scanner - Trivy (filesystem)"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          scanners: vuln
+
+      - name: "[Security] Vulnerability Scanner - Trivy (Docker image)"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: backend-runtime-check
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          scanners: vuln
+
+      # ─────────────────────────────────────────────
+      # 8. SBOM — Software Bill of Materials (CycloneDX format)
+      # Generates a complete inventory of all software components,
+      # libraries, versions and licenses inside the project.
+      # Uploaded as a GitHub artifact for audit and compliance traceability.
+      # ─────────────────────────────────────────────
+      - name: "[Security] Generate SBOM - Trivy CycloneDX"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: sbom.json
+          scanners: vuln
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 90
 
   deploy:
     name: Deploy API to ECS
@@ -108,3 +215,20 @@ jobs:
           echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
 
           echo "Imagen subida exitosamente a ECR: $IMAGE_URI"
+
+      # ─────────────────────────────────────────────
+      # SEGURIDAD EN LA CADENA DE SUMINISTRO — cosign (keyless)
+      # Signs the published Docker image using Sigstore cosign with GitHub OIDC.
+      # No static private keys needed — the GitHub Actions token IS the identity.
+      # The signature is pushed alongside the image in ECR and can be verified
+      # by anyone with: cosign verify --certificate-identity-regexp=... <image>
+      # ─────────────────────────────────────────────
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: "[Security] Sign image - cosign keyless (Supply Chain)"
+        env:
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+        run: |
+          cosign sign --yes "$IMAGE_URI"
+
