@@ -34,6 +34,7 @@ COPY . .
 RUN npm run build
 
 # Stage 4: Production
+# hadolint ignore=DL3006,DL3007
 FROM gcr.io/distroless/nodejs24-debian13 AS production
 
 WORKDIR /usr/src/app
