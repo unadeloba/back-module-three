@@ -1,3 +1,2 @@
-[allowlist]
-description = "Ignorar token antiguo y revocado en el README"
-commits = ["4f275341f958e674fdc7218daf1a3e3648e6ba0b"]
+# Ignorar token falso/antiguo encontrado en el README
+4f275341f958e674fdc7218daf1a3e3648e6ba0b:README.md:generic-api-key:5
