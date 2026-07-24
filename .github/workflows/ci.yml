@@ -44,9 +44,8 @@ jobs:
       # Fails the pipeline immediately if any secret is found in any commit.
       # ─────────────────────────────────────────────
       - name: "[Security] Secrets Scanner - Gitleaks"
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/path" zricethezav/gitleaks:latest detect --source="/path" -v
 
       # ─────────────────────────────────────────────
       # 2. VALIDACION DE ESTANDARES — Hadolint
